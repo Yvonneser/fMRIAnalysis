@@ -1,0 +1,194 @@
+---
+title: "Test Re-Test ICC Notebook"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+Here we import the relevant Packages to our project 
+
+```{r,warning=FALSE,message=FALSE}
+library(ggsci)
+library(cowplot)
+library(ggthemes)
+library(ggridges)
+library(philentropy)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(psych)
+library(ICC)
+library(lattice)
+library(lpSolve)
+library(irr)
+library(plot.matrix)
+library(reshape)
+library(plotly)
+library(tidyverse)
+library(svglite)
+```
+
+Now we need to Import the Data (Gradient 1, 2 and 3 of all the Subjects)
+```{r}
+g1g2g3 = read.csv('G1G2G3AVG_results.csv')
+g1g2g3$YeoNets = factor(g1g2g3$YeoNets, levels = c('VN','SMN','DAN','SN','LN','FPN','DMN'))
+head(g1g2g3)
+
+```
+
+Data of Gradient 1
+
+```{r}
+g1 = read.csv('G1_results.csv')
+DMN_SMN_G1 = g1 %>% filter(YeoNets == 'DMN' | YeoNets == 'SMN' )
+DMN_SMN_G1$YeoNets = factor(DMN_SMN_G1$YeoNets, levels = c('DMN','SMN'))
+
+head(DMN_SMN_G1)
+```
+
+
+Plot of the Yeo Networks
+
+```{r}
+data = g1g2g3 %>% filter(YeoNets != 'LN')
+data$YeoNets = factor(data$YeoNets, levels = c('DMN','FPN','SN','DAN','SMN','VN'))
+
+p2 <- ggplot(data, aes(x = Gradient1, y = YeoNets, color = YeoNets, fill = YeoNets)) +
+  geom_density_ridges(alpha = 0.6, scale = 3) +
+  scale_x_continuous(expand = c(0,0)) +
+  scale_y_discrete(expand = c(0,0)) +
+  scale_fill_manual(values = c('#CD3E4E','#E69422', '#BE3AFA', '#00760E', '#4682B4', '#781286')) +
+  scale_color_manual(values = c('#CD3E4E','#E69422', '#BE3AFA', '#00760E', '#4682B4', '#781286')) +
+  coord_cartesian(clip = 'off') +
+  labs(y='', title='YeoNets') + theme_ridges() + 
+  theme(legend.position = 'none',
+        plot.title = element_text(face='bold', size=20, hjust=0.5))
+
+p2
+```
+
+Now we plot for each sub only the DMN and SMN Networks
+
+```{r}
+data = DMN_SMN_G1%>% select(-c(YeoNets,Yeo))
+drops<- c("YeoNets","Yeo")
+data= DMN_SMN_G1[,!(names(DMN_SMN_G1) %in% drops)]
+
+p3<-ggplot(DMN_SMN_G1, aes(x= sub.1, color=YeoNets, fill = YeoNets)) +
+  geom_density(alpha=0.4)+
+  scale_x_continuous(limits = c(min(data%>%select(-X)),max(data%>%select(-X))))+
+  scale_y_continuous(limits = c(0, 40))+
+  labs(x="sub1 ses2",y='', title='YeoNets') + theme_ridges() + 
+  theme(legend.position = 'none',
+        plot.title = element_text(face='bold', size=10, hjust=0.5))
+
+p3
+```
+
+Compute the ICC values of the DMN_SMN vector between each Subject 
+
+```{r}
+#split the data sessions 
+ses1_df<- DMN_SMN_G1[,2:10]
+ses2_df<- DMN_SMN_G1[,11:19]
+iccMatrix<- matrix(ncol=ncol(ses1_df), nrow=ncol(ses2_df))
+
+
+
+for(i in 1:ncol(ses1_df)){
+  
+  for(j in 1:ncol(ses2_df)){
+  
+    targetVec<- ses1_df[ ,i]
+    otherVec<- ses2_df[,j]
+    combinVec<-cbind(targetVec,otherVec)
+    v<-icc(combinVec, model = "twoway", type = "agreement", unit = "single")$value
+    iccMatrix[i,j]<-v
+    
+  }##end for j
+  
+  
+}##end for i
+
+
+matrix_df<- as.data.frame(iccMatrix)
+colnames(matrix_df)<-c('Sub1','Sub2','Sub3','Sub4','Sub5','Sub6','Sub7','Sub8','Sub9')
+rownames(matrix_df)<-c('Sub1','Sub2','Sub3','Sub4','Sub5','Sub6','Sub7','Sub8','Sub9')
+y<- colnames(matrix_df)
+x<- rownames(matrix_df)
+y<-rep(y, times = 9)
+dft<-t(combinVec)
+df <- melt(matrix_df)
+pMatrix<-ggplot(data =df , aes(x=variable, y=y,fill= value)) + 
+  geom_tile()+
+  labs(x="ses1",y='ses2', title='ICC') +
+  theme(plot.title = element_text(face='bold', size=10, hjust=0.5),axis.text.x = element_text(size=8, angle = 45, hjust = 1),axis.text.y = element_text(size=8,angle = 45, hjust = 1) )
+
+pMatrix
+ggsave(file="pmatrixSingle.png", pMatrix, width=6, height=5, dpi=400)
+ggplotly(pMatrix)
+
+```
+
+
+ks_test value 
+
+```{r}
+
+DMN = DMN_SMN_G1 %>% filter(YeoNets == 'DMN')
+SMN = DMN_SMN_G1 %>% filter(YeoNets == 'SMN')  
+#Preper the data
+DMN_ses1<- DMN[,2:10]
+SMN_ses1<- SMN[,2:10]
+DMN_ses2<- DMN[,11:19]
+SMN_ses2<- SMN[,11:19]
+ks_test_Matrix<- matrix(ncol=2, nrow=ncol(ses2_df))
+
+head(DMN_ses1)
+```
+
+computing the ks_test value 
+
+```{r,warning=FALSE,message=FALSE}
+
+for(i in 1:2){
+  
+  for(j in 1:ncol(ses2_df)){
+    
+    targetVec<- eval(parse(text = paste0("DMN_ses",i)))[ ,j]
+    otherVec<- eval(parse(text = paste0("SMN_ses",i)))[ ,j]
+    v<- ks.test(targetVec,otherVec)$stat
+    ks_test_Matrix[j,i]<-v
+    
+  }##end for j
+  
+  
+}##end for i
+
+```
+
+The results
+
+```{r}
+ks_test_Matrix<-as.data.frame(ks_test_Matrix)
+ks_test_Matrix$diff<-(ks_test_Matrix$V1-ks_test_Matrix$V2)
+colnames(ks_test_Matrix)<-c("ses1","ses2","diff")
+ks_test_Matrix
+```
+
+
+Compute th ICC value between the two ses Ks_test values 
+
+unit parameter = Average
+```{r}
+icc(ks_test_Matrix[ , c("ses1","ses2")], model = "twoway", type = "agreement", unit = "average")
+
+```
+
+unit parameter = Single
+
+```{r}
+icc(ks_test_Matrix[ , c("ses1","ses2")], model = "twoway", type = "agreement", unit = "single")
+```
+
